@@ -1,58 +1,206 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Data Acquisition Engine
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Technical Challenge untuk Program PKL Berani Digital ID. Aplikasi ini adalah engine agregasi data yang terdiri dari tiga connector independen (Website Metadata Extractor, Domain Intelligence via RDAP, dan Company Location Finder via Nominatim/OpenStreetMap), yang digabungkan menjadi satu endpoint integrasi.
 
-## About Laravel
+## Tech Stack
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- Framework: Laravel 13 (PHP 8.3)
+- HTTP Client: Laravel HTTP Client (Guzzle)
+- Parsing HTML: Native PHP DOMDocument/DOMXPath, tanpa dependency eksternal
+- Cache: File-based cache
+- Database: Tidak digunakan (lihat bagian Asumsi dan Kendala)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Instalasi
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Prasyarat: PHP >= 8.2 dan Composer sudah terpasang.
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+git clone https://github.com/USERNAME/data-acquisition-engine.git
+cd data-acquisition-engine
+composer install
+cp .env.example .env
+php artisan key:generate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+## Konfigurasi
 
-## Contributing
+Buka file `.env`, pastikan baris berikut sudah sesuai:
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```env
+CACHE_STORE=file
+```
 
-## Code of Conduct
+Aplikasi ini tidak memerlukan konfigurasi database apapun, karena seluruh data diambil secara langsung dari sumber eksternal tanpa disimpan secara permanen.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Menjalankan Aplikasi
 
-## Security Vulnerabilities
+```bash
+php artisan serve
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Aplikasi akan berjalan di `http://127.0.0.1:8000`. Seluruh endpoint API dapat diakses melalui prefix `/api`, sehingga endpoint yang didaftarkan pada `routes/api.php` diakses dengan awalan tersebut, misalnya `POST http://127.0.0.1:8000/api/extract/website`.
 
-## License
+## Dokumentasi Endpoint
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Seluruh endpoint mengembalikan response dalam format JSON dengan struktur yang konsisten.
+
+Format response sukses:
+```json
+{
+  "success": true,
+  "data": { }
+}
+```
+
+Format response gagal:
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Pesan error yang jelas"
+  }
+}
+```
+
+### 1. Website Metadata Extractor
+POST /api/extract/website
+
+Body:
+```json
+{
+  "url": "https://paper.id"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://paper.id",
+    "title": "",
+    "description": "",
+    "canonical": "",
+    "favicon": "",
+    "emails": ["support@paper.id"],
+    "phones": {
+      "confirmed": ["6285219526186"],
+      "possible": [
+        { "raw": "67732591", "normalized": "67732591", "confidence": "low" }
+      ]
+    },
+    "social_media": ["https://www.instagram.com/paperindonesia/"],
+    "open_graph": {
+      "title": "",
+      "description": "",
+      "image": ""
+    }
+  }
+}
+```
+
+Field `phones` dikembangkan dari array string sederhana menjadi objek dengan dua kategori. `confirmed` berisi nomor dengan format yang meyakinkan sebagai nomor Indonesia, sedangkan `possible` berisi kandidat lain yang lolos filter dasar namun tidak memenuhi pola tersebut. Pendekatan ini memberi transparansi tingkat keyakinan hasil ekstraksi, mengingat regex pada teks bebas tidak dapat menjamin akurasi penuh.
+
+### 2. Domain Intelligence (RDAP)
+POST /api/extract/domain
+
+Body:
+```json
+{
+  "domain": "paper.id"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "domain": "paper.id",
+    "handle": "302361_DOMAIN_ID-ID",
+    "registrar": "PT Jagat Informasi Solusi",
+    "abuse_contact": null,
+    "registered_at": "2014-08-15T11:00:45Z",
+    "expired_at": "2030-08-15T23:59:59Z",
+    "last_updated": "2025-09-29T01:03:31Z",
+    "status": ["active"],
+    "nameservers": ["jeremy.ns.cloudflare.com", "magali.ns.cloudflare.com"]
+  }
+}
+```
+
+Field `handle` dan `abuse_contact` ditambahkan di luar spesifikasi minimum sebagai informasi tambahan yang relevan untuk konteks domain intelligence. Field `registrar` menunjukkan penyedia jasa registrasi domain, bukan pemilik domain, karena data pemilik domain umumnya disembunyikan oleh RDAP untuk alasan privasi.
+
+### 3. Company Location Finder (Nominatim)
+POST /api/extract/location
+
+Body:
+```json
+{
+  "query": "PT Telkom Indonesia"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "display_name": "",
+    "latitude": "",
+    "longitude": "",
+    "importance": 0,
+    "osm_type": "",
+    "address": { },
+    "match_quality": "reliable"
+  }
+}
+```
+
+Field `match_quality` ditambahkan untuk memberi sinyal keandalan hasil pencarian, berdasarkan skor `importance` yang dikembalikan Nominatim. Nilainya `reliable` atau `uncertain`, mengingat Nominatim adalah layanan geocoding berbasis data crowd-sourced dengan cakupan yang tidak merata, khususnya untuk entitas non-fisik seperti kantor perusahaan digital.
+
+### 4. Final Integration
+GET /api/company-information?domain=paper.id&company_name=Paper.id
+
+Parameter `domain` wajib diisi, sedangkan `company_name` bersifat opsional namun disarankan untuk hasil pencarian lokasi yang lebih akurat.
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "query": { "domain": "paper.id", "company_name": "Paper.id" },
+    "website": { },
+    "website_error": null,
+    "domain": { },
+    "domain_error": null,
+    "location": { },
+    "location_error": null
+  }
+}
+```
+
+Ketiga connector dipanggil secara independen. Apabila salah satu connector gagal, connector lain tetap dikembalikan hasilnya, dengan error yang gagal ditandai secara eksplisit pada field `*_error`. Pendekatan ini mencegah kegagalan satu sumber data memengaruhi keseluruhan request, karena ketiga connector tidak saling bergantung satu sama lain.
+
+## Asumsi dan Kendala
+
+Ekstraksi email dan nomor telepon bersifat best-effort. Tidak terdapat struktur HTML baku untuk kedua jenis data tersebut, sehingga digunakan kombinasi pencarian melalui XPath dan pencarian pola menggunakan regex pada teks bebas. Regex nomor telepon dibuat relatif longgar agar tidak kehilangan nomor yang valid, dengan konsekuensi kemungkinan menangkap angka lain yang secara pola menyerupai nomor telepon namun bukan nomor telepon sebenarnya.
+
+Akurasi pencarian lokasi bergantung pada kelengkapan data OpenStreetMap. Untuk entitas seperti perusahaan digital yang umumnya tidak terdaftar sebagai lokasi fisik, pencarian berbasis nama domain saja sering kali tidak menemukan lokasi yang relevan. Parameter opsional `company_name` disediakan untuk meningkatkan relevansi pencarian, namun tidak menjamin akurasi penuh karena keterbatasan yang melekat pada sumber data pihak ketiga.
+
+Data pemilik domain tidak ditampilkan pada hasil Domain Intelligence. RDAP modern menyembunyikan informasi tersebut secara default untuk kepatuhan terhadap kebijakan privasi. Field `registrar` yang ditampilkan merepresentasikan penyedia jasa registrasi domain, bukan pemilik domain yang sebenarnya.
+
+Aplikasi ini tidak menggunakan database. Seluruh data diambil secara langsung dan real-time dari sumber eksternal pada setiap request. Keputusan ini diambil karena menyimpan hasil scraping atau lookup ke database berisiko membuat data menjadi usang dibandingkan sumber aslinya, sehingga kurang sesuai dengan sifat aplikasi ini sebagai acquisition engine.
+
+## Nilai Tambah yang Diimplementasikan
+
+Caching diterapkan secara konsisten pada seluruh connector menggunakan file-based cache dengan TTL 3600 detik, untuk mengurangi jumlah request berulang ke layanan eksternal.
+
+Logging diterapkan pada seluruh service untuk mencatat proses pemanggilan layanan eksternal beserta keberhasilan dan kegagalannya, dapat diperiksa pada berkas `storage/logs/laravel.log`.
+
+Service layer dengan dependency injection berbasis interface diterapkan pada seluruh connector, memisahkan logic bisnis dari HTTP layer dan mempermudah pengujian melalui mocking.
+
+## Author
+
+Safina annaja — dikerjakan untuk Technical Challenge PKL Berani Digital ID
