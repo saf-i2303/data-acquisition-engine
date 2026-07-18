@@ -13,12 +13,14 @@ class LocationFinderService implements LocationFinderServiceInterface
 {
     private const TIMEOUT_SECONDS = 10;
     private const BASE_URL = 'https://nominatim.openstreetmap.org/search';
+    private const RELIABLE_IMPORTANCE_THRESHOLD = 0.3;
 
     public function search(string $query): array
     {
         Log::info('Memulai pencarian lokasi', ['query' => $query]);
 
         $result = $this->fetchFirstResult($query);
+        $importance = (float) ($result['importance'] ?? 0);
 
         $data = [
             'display_name' => $result['display_name'] ?? null,
@@ -27,9 +29,16 @@ class LocationFinderService implements LocationFinderServiceInterface
             'importance' => $result['importance'] ?? null,
             'osm_type' => $result['osm_type'] ?? null,
             'address' => $result['address'] ?? [],
+            'match_quality' => $importance >= self::RELIABLE_IMPORTANCE_THRESHOLD
+                ? 'reliable'
+                : 'uncertain',
         ];
 
-        Log::info('Pencarian lokasi selesai', ['query' => $query]);
+        Log::info('Pencarian lokasi selesai', [
+            'query' => $query,
+            'importance' => $importance,
+            'match_quality' => $data['match_quality'],
+        ]);
 
         return $data;
     }
