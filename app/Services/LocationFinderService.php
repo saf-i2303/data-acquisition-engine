@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\ExternalServiceException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Services\Contracts\LocationFinderServiceInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -14,33 +15,38 @@ class LocationFinderService implements LocationFinderServiceInterface
     private const TIMEOUT_SECONDS = 10;
     private const BASE_URL = 'https://nominatim.openstreetmap.org/search';
     private const RELIABLE_IMPORTANCE_THRESHOLD = 0.3;
+    private const CACHE_TTL_SECONDS = 3600;
 
     public function search(string $query): array
     {
-        Log::info('Memulai pencarian lokasi', ['query' => $query]);
+        $cacheKey = 'location:' . md5(strtolower($query));
 
-        $result = $this->fetchFirstResult($query);
-        $importance = (float) ($result['importance'] ?? 0);
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($query) {
+            Log::info('Memulai pencarian lokasi', ['query' => $query]);
 
-        $data = [
-            'display_name' => $result['display_name'] ?? null,
-            'latitude' => $result['lat'] ?? null,
-            'longitude' => $result['lon'] ?? null,
-            'importance' => $result['importance'] ?? null,
-            'osm_type' => $result['osm_type'] ?? null,
-            'address' => $result['address'] ?? [],
-            'match_quality' => $importance >= self::RELIABLE_IMPORTANCE_THRESHOLD
-                ? 'reliable'
-                : 'uncertain',
-        ];
+            $result = $this->fetchFirstResult($query);
+            $importance = (float) ($result['importance'] ?? 0);
 
-        Log::info('Pencarian lokasi selesai', [
-            'query' => $query,
-            'importance' => $importance,
-            'match_quality' => $data['match_quality'],
-        ]);
+            $data = [
+                'display_name' => $result['display_name'] ?? null,
+                'latitude' => $result['lat'] ?? null,
+                'longitude' => $result['lon'] ?? null,
+                'importance' => $result['importance'] ?? null,
+                'osm_type' => $result['osm_type'] ?? null,
+                'address' => $result['address'] ?? [],
+                'match_quality' => $importance >= self::RELIABLE_IMPORTANCE_THRESHOLD
+                    ? 'reliable'
+                    : 'uncertain',
+            ];
 
-        return $data;
+            Log::info('Pencarian lokasi selesai', [
+                'query' => $query,
+                'importance' => $importance,
+                'match_quality' => $data['match_quality'],
+            ]);
+
+            return $data;
+        });
     }
 
     private function fetchFirstResult(string $query): array

@@ -7,6 +7,7 @@ use App\Services\Contracts\WebsiteMetadataServiceInterface;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -14,6 +15,7 @@ use Throwable;
 class WebsiteMetadataService implements WebsiteMetadataServiceInterface
 {
     private const TIMEOUT_SECONDS = 10;
+    private const CACHE_TTL_SECONDS = 3600;
 
     private const SOCIAL_DOMAINS = [
         'facebook.com',
@@ -28,34 +30,38 @@ class WebsiteMetadataService implements WebsiteMetadataServiceInterface
 
     public function extract(string $url): array
     {
-        Log::info('Memulai ekstraksi metadata website', ['url' => $url]);
+        $cacheKey = 'website_metadata:' . md5($url);
 
-        $html = $this->fetchHtml($url);
-        [, $xpath] = $this->parseHtml($html);
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($url) {
+            Log::info('Memulai ekstraksi metadata website', ['url' => $url]);
 
-        $result = [
-            'url' => $url,
-            'title' => $this->extractTitle($xpath),
-            'description' => $this->extractMetaByName($xpath, 'description'),
-            'canonical' => $this->extractCanonical($xpath),
-            'favicon' => $this->extractFavicon($xpath, $url),
-            'emails' => $this->extractEmails($html, $xpath),
-            'phones' => $this->extractPhones($html),
-            'social_media' => $this->extractSocialMedia($xpath),
-            'open_graph' => [
-                'title' => $this->extractMetaByProperty($xpath, 'og:title'),
-                'description' => $this->extractMetaByProperty($xpath, 'og:description'),
-                'image' => $this->extractMetaByProperty($xpath, 'og:image'),
-            ],
-        ];
+            $html = $this->fetchHtml($url);
+            [, $xpath] = $this->parseHtml($html);
 
-        Log::info('Ekstraksi metadata website selesai', [
-            'url' => $url,
-            'emails_found' => count($result['emails']),
-            'phones_found' => count($result['phones']),
-        ]);
+            $result = [
+                'url' => $url,
+                'title' => $this->extractTitle($xpath),
+                'description' => $this->extractMetaByName($xpath, 'description'),
+                'canonical' => $this->extractCanonical($xpath),
+                'favicon' => $this->extractFavicon($xpath, $url),
+                'emails' => $this->extractEmails($html, $xpath),
+                'phones' => $this->extractPhones($html),
+                'social_media' => $this->extractSocialMedia($xpath),
+                'open_graph' => [
+                    'title' => $this->extractMetaByProperty($xpath, 'og:title'),
+                    'description' => $this->extractMetaByProperty($xpath, 'og:description'),
+                    'image' => $this->extractMetaByProperty($xpath, 'og:image'),
+                ],
+            ];
 
-        return $result;
+            Log::info('Ekstraksi metadata website selesai', [
+                'url' => $url,
+                'emails_found' => count($result['emails']),
+                'phones_found' => count($result['phones']),
+            ]);
+
+            return $result;
+        });
     }
 
     private function fetchHtml(string $url): string

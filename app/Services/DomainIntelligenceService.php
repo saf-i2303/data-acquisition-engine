@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\ExternalServiceException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Services\Contracts\DomainIntelligenceServiceInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -13,32 +14,37 @@ class DomainIntelligenceService implements DomainIntelligenceServiceInterface
 {
     private const TIMEOUT_SECONDS = 10;
     private const BASE_URL = 'https://rdap.org/domain/';
+    private const CACHE_TTL_SECONDS = 3600;
 
     public function lookup(string $domain): array
     {
-        Log::info('Memulai pencarian data RDAP domain', ['domain' => $domain]);
+        $cacheKey = 'domain_rdap:' . strtolower($domain);
 
-        $data = $this->fetchRdap($domain);
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($domain) {
+            Log::info('Memulai pencarian data RDAP domain', ['domain' => $domain]);
 
-        $result = [
-            'domain' => strtolower($data['ldhName'] ?? $domain),
-            'handle' => $data['handle'] ?? null,
-            'registrar' => $this->extractEntityField($data, 'registrar', 'fn'),
-            'abuse_contact' => $this->extractEntityField($data, 'abuse', 'email'),
-            'registered_at' => $this->extractEventDate($data, 'registration'),
-            'expired_at' => $this->extractEventDate($data, 'expiration'),
-            'last_updated' => $this->extractEventDate($data, 'last changed'),
-            'status' => $data['status'] ?? [],
-            'nameservers' => collect($data['nameservers'] ?? [])
-                ->pluck('ldhName')
-                ->filter()
-                ->values()
-                ->all(),
-        ];
+            $data = $this->fetchRdap($domain);
 
-        Log::info('Pencarian data RDAP selesai', ['domain' => $domain]);
+            $result = [
+                'domain' => strtolower($data['ldhName'] ?? $domain),
+                'handle' => $data['handle'] ?? null,
+                'registrar' => $this->extractEntityField($data, 'registrar', 'fn'),
+                'abuse_contact' => $this->extractEntityField($data, 'abuse', 'email'),
+                'registered_at' => $this->extractEventDate($data, 'registration'),
+                'expired_at' => $this->extractEventDate($data, 'expiration'),
+                'last_updated' => $this->extractEventDate($data, 'last changed'),
+                'status' => $data['status'] ?? [],
+                'nameservers' => collect($data['nameservers'] ?? [])
+                    ->pluck('ldhName')
+                    ->filter()
+                    ->values()
+                    ->all(),
+            ];
 
-        return $result;
+            Log::info('Pencarian data RDAP selesai', ['domain' => $domain]);
+
+            return $result;
+        });
     }
 
     private function fetchRdap(string $domain): array
