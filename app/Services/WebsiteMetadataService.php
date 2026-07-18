@@ -169,7 +169,7 @@ class WebsiteMetadataService implements WebsiteMetadataServiceInterface
             ->all();
     }
 
-     private function extractPhones(string $html): array
+    private function extractPhones(string $html): array
     {
         preg_match_all(
             '/(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{2,4}\)[\s.-]?)?\d{3,4}[\s.-]?\d{3,4}[\s.-]?\d{0,4}/',
@@ -177,7 +177,7 @@ class WebsiteMetadataService implements WebsiteMetadataServiceInterface
             $matches
         );
 
-        return collect($matches[0] ?? [])
+        $candidates = collect($matches[0] ?? [])
             ->map(fn ($phone) => trim($phone))
             ->filter(function ($phone) {
                 if (preg_match('/\d+\.\d{3,}/', $phone)) {
@@ -198,12 +198,22 @@ class WebsiteMetadataService implements WebsiteMetadataServiceInterface
                 ];
             })
             ->unique('normalized')
-            ->values()
-            ->all();
+            ->values();
+
+        return [
+            'confirmed' => $candidates
+                ->where('confidence', 'high')
+                ->pluck('normalized')
+                ->values()
+                ->all(),
+            'possible' => $candidates
+                ->where('confidence', 'low')
+                ->values()
+                ->all(),
+        ];
     }
 
-
-   private function phoneConfidence(string $digits): string
+    private function phoneConfidence(string $digits): string
     {
         $isMobileFormat = str_starts_with($digits, '62') || str_starts_with($digits, '08');
         $isPlausibleLength = strlen($digits) >= 10 && strlen($digits) <= 14;
