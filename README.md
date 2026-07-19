@@ -201,6 +201,8 @@ Logging diterapkan pada seluruh service untuk mencatat proses pemanggilan layana
 
 Service layer dengan dependency injection berbasis interface diterapkan pada seluruh connector, memisahkan logic bisnis dari HTTP layer dan mempermudah pengujian melalui mocking.
 
+Feature test diterapkan pada seluruh endpoint, mencakup kasus sukses, validasi input, penanganan error dari layanan eksternal, serta skenario kegagalan parsial pada endpoint Final Integration. Total terdapat 15 test dengan 36 assertion, dapat dijalankan melalui `php artisan test`.
+
 ## Author
 
 Safina annaja — dikerjakan untuk Technical Challenge PKL Berani Digital ID
