@@ -12,7 +12,7 @@ use Throwable;
 
 class DomainIntelligenceService implements DomainIntelligenceServiceInterface
 {
-    private const TIMEOUT_SECONDS = 10;
+    private const TIMEOUT_SECONDS = 20;
     private const BASE_URL = 'https://rdap.org/domain/';
     private const CACHE_TTL_SECONDS = 3600;
 

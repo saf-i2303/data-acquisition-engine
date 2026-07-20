@@ -2,6 +2,18 @@
 
 Technical Challenge untuk Program PKL Berani Digital ID. Aplikasi ini adalah engine agregasi data yang terdiri dari tiga connector independen (Website Metadata Extractor, Domain Intelligence via RDAP, dan Company Location Finder via Nominatim/OpenStreetMap), yang digabungkan menjadi satu endpoint integrasi.
 
+## Live Demo
+
+Base URL: `https://data-acquisition-engine-production.up.railway.app/api`
+
+Contoh endpoint POST:
+`POST https://data-acquisition-engine-production.up.railway.app/api/extract/website`
+
+Contoh endpoint GET dengan query parameter:
+`GET https://data-acquisition-engine-production.up.railway.app/api/company-information?domain=paper.id&company_name=Paper.id`
+
+Catatan: response time RDAP (rdap.org) bisa bervariasi tergantung kondisi jaringan saat itu, mulai dari kurang dari 2 detik sampai lebih dari 10 detik. Timeout untuk connector ini sudah diatur ke 20 detik untuk mengakomodasi variasi tersebut, dan kegagalan tetap tertangani dengan baik lewat error handling yang konsisten.
+
 ## Tech Stack
 
 - Framework: Laravel 13 (PHP 8.3)
@@ -15,7 +27,7 @@ Technical Challenge untuk Program PKL Berani Digital ID. Aplikasi ini adalah eng
 Prasyarat: PHP >= 8.2 dan Composer sudah terpasang.
 
 ```bash
-git clone https://github.com/USERNAME/data-acquisition-engine.git
+git clone https://github.com/saf-i2303/data-acquisition-engine.git
 cd data-acquisition-engine
 composer install
 cp .env.example .env
@@ -100,7 +112,7 @@ Response:
 }
 ```
 
-Field `phones` dikembangkan dari array string sederhana menjadi objek dengan dua kategori. `confirmed` berisi nomor dengan format yang meyakinkan sebagai nomor Indonesia, sedangkan `possible` berisi kandidat lain yang lolos filter dasar namun tidak memenuhi pola tersebut. Pendekatan ini memberi transparansi tingkat keyakinan hasil ekstraksi, mengingat regex pada teks bebas tidak dapat menjamin akurasi penuh.
+Field `phones` sengaja dikembangkan dari sekadar array string jadi objek dengan dua kategori. `confirmed` berisi nomor dengan format yang meyakinkan sebagai nomor Indonesia, sedangkan `possible` berisi kandidat lain yang lolos filter dasar tapi belum tentu benar-benar nomor telepon. Pendekatan ini dipilih karena regex pada teks bebas tidak pernah bisa 100% akurat, jadi lebih baik transparan soal tingkat keyakinannya daripada berpura-pura semua hasil pasti benar.
 
 ### 2. Domain Intelligence (RDAP)
 POST /api/extract/domain
@@ -130,7 +142,7 @@ Response:
 }
 ```
 
-Field `handle` dan `abuse_contact` ditambahkan di luar spesifikasi minimum sebagai informasi tambahan yang relevan untuk konteks domain intelligence. Field `registrar` menunjukkan penyedia jasa registrasi domain, bukan pemilik domain, karena data pemilik domain umumnya disembunyikan oleh RDAP untuk alasan privasi.
+Field `handle` dan `abuse_contact` ditambahkan di luar spesifikasi minimum karena relevan untuk konteks domain intelligence. Field `registrar` di sini menunjukkan penyedia jasa registrasi domain, bukan pemilik domainnya — data pemilik domain umumnya memang disembunyikan RDAP untuk alasan privasi.
 
 ### 3. Company Location Finder (Nominatim)
 POST /api/extract/location
@@ -158,12 +170,12 @@ Response:
 }
 ```
 
-Field `match_quality` ditambahkan untuk memberi sinyal keandalan hasil pencarian, berdasarkan skor `importance` yang dikembalikan Nominatim. Nilainya `reliable` atau `uncertain`, mengingat Nominatim adalah layanan geocoding berbasis data crowd-sourced dengan cakupan yang tidak merata, khususnya untuk entitas non-fisik seperti kantor perusahaan digital.
+Field `match_quality` ditambahkan untuk kasih sinyal seberapa bisa diandalkan hasil pencariannya, dihitung dari skor `importance` yang dikembalikan Nominatim. Nilainya `reliable` atau `uncertain`. Ini penting karena Nominatim itu layanan geocoding berbasis data crowd-sourced yang cakupannya nggak merata, terutama untuk entitas non-fisik kayak kantor perusahaan digital.
 
 ### 4. Final Integration
 GET /api/company-information?domain=paper.id&company_name=Paper.id
 
-Parameter `domain` wajib diisi, sedangkan `company_name` bersifat opsional namun disarankan untuk hasil pencarian lokasi yang lebih akurat.
+Parameter `domain` wajib diisi, sedangkan `company_name` opsional tapi disarankan supaya hasil pencarian lokasinya lebih akurat.
 
 Response:
 ```json
@@ -181,27 +193,29 @@ Response:
 }
 ```
 
-Ketiga connector dipanggil secara independen. Apabila salah satu connector gagal, connector lain tetap dikembalikan hasilnya, dengan error yang gagal ditandai secara eksplisit pada field `*_error`. Pendekatan ini mencegah kegagalan satu sumber data memengaruhi keseluruhan request, karena ketiga connector tidak saling bergantung satu sama lain.
+Ketiga connector dipanggil secara independen satu sama lain. Kalau salah satunya gagal, connector lain tetap dikembalikan hasilnya seperti biasa, dengan error yang gagal ditandai jelas di field `*_error`. Pendekatan ini dipilih supaya kegagalan di satu sumber data nggak ikut menjatuhkan seluruh request, mengingat ketiga connector ini memang nggak saling bergantung.
 
 ## Asumsi dan Kendala
 
-Ekstraksi email dan nomor telepon bersifat best-effort. Tidak terdapat struktur HTML baku untuk kedua jenis data tersebut, sehingga digunakan kombinasi pencarian melalui XPath dan pencarian pola menggunakan regex pada teks bebas. Regex nomor telepon dibuat relatif longgar agar tidak kehilangan nomor yang valid, dengan konsekuensi kemungkinan menangkap angka lain yang secara pola menyerupai nomor telepon namun bukan nomor telepon sebenarnya.
+Ekstraksi email dan nomor telepon sifatnya best-effort. Nggak ada struktur HTML baku untuk kedua jenis data ini, jadi dipakai kombinasi pencarian lewat XPath dan pola regex di teks bebas. Regex nomor telepon dibuat agak longgar supaya nggak kehilangan nomor yang valid, konsekuensinya kadang ikut menangkap angka lain yang polanya mirip nomor telepon padahal bukan.
 
-Akurasi pencarian lokasi bergantung pada kelengkapan data OpenStreetMap. Untuk entitas seperti perusahaan digital yang umumnya tidak terdaftar sebagai lokasi fisik, pencarian berbasis nama domain saja sering kali tidak menemukan lokasi yang relevan. Parameter opsional `company_name` disediakan untuk meningkatkan relevansi pencarian, namun tidak menjamin akurasi penuh karena keterbatasan yang melekat pada sumber data pihak ketiga.
+Akurasi pencarian lokasi bergantung sama kelengkapan data OpenStreetMap. Untuk entitas seperti perusahaan digital yang biasanya nggak terdaftar sebagai lokasi fisik, pencarian cuma berdasarkan nama domain sering nggak nemu lokasi yang relevan. Parameter opsional `company_name` disediakan untuk membantu meningkatkan relevansi pencarian, tapi tetap nggak menjamin akurasi penuh karena ini keterbatasan yang melekat di sumber data pihak ketiga.
 
-Data pemilik domain tidak ditampilkan pada hasil Domain Intelligence. RDAP modern menyembunyikan informasi tersebut secara default untuk kepatuhan terhadap kebijakan privasi. Field `registrar` yang ditampilkan merepresentasikan penyedia jasa registrasi domain, bukan pemilik domain yang sebenarnya.
+Data pemilik domain nggak ditampilkan di hasil Domain Intelligence. RDAP modern memang menyembunyikan informasi ini secara default demi kepatuhan privasi. Field `registrar` yang ditampilkan itu penyedia jasa registrasi domainnya, bukan pemilik domain yang sebenarnya.
 
-Aplikasi ini tidak menggunakan database. Seluruh data diambil secara langsung dan real-time dari sumber eksternal pada setiap request. Keputusan ini diambil karena menyimpan hasil scraping atau lookup ke database berisiko membuat data menjadi usang dibandingkan sumber aslinya, sehingga kurang sesuai dengan sifat aplikasi ini sebagai acquisition engine.
+Aplikasi ini nggak pakai database sama sekali. Semua data diambil langsung secara real-time dari sumber eksternal setiap kali ada request. Keputusan ini diambil karena kalau hasil scraping/lookup disimpan ke database, datanya berisiko jadi usang dibanding sumber aslinya — kurang cocok dengan sifat aplikasi ini sebagai acquisition engine, bukan storage engine.
+
+Pada deployment production, request ke RDAP kadang butuh waktu lebih lama dari biasanya akibat latensi jaringan antar server. Ini murni karakteristik infrastruktur RDAP yang di luar kendali aplikasi, dan sudah diantisipasi dengan menaikkan timeout khusus untuk connector ini serta error handling yang tetap konsisten kalau memang gagal.
 
 ## Nilai Tambah yang Diimplementasikan
 
-Caching diterapkan secara konsisten pada seluruh connector menggunakan file-based cache dengan TTL 3600 detik, untuk mengurangi jumlah request berulang ke layanan eksternal.
+Untuk mengurangi request berulang ke layanan eksternal, seluruh connector menggunakan file-based cache dengan TTL 3600 detik.
 
-Logging diterapkan pada seluruh service untuk mencatat proses pemanggilan layanan eksternal beserta keberhasilan dan kegagalannya, dapat diperiksa pada berkas `storage/logs/laravel.log`.
+Setiap proses pemanggilan API eksternal juga dicatat lewat logging, baik yang berhasil maupun gagal. Log ini bisa dicek di `storage/logs/laravel.log` kalau butuh debug lebih lanjut.
 
-Service layer dengan dependency injection berbasis interface diterapkan pada seluruh connector, memisahkan logic bisnis dari HTTP layer dan mempermudah pengujian melalui mocking.
+Dari sisi arsitektur, tiap connector punya service layer sendiri dengan dependency injection berbasis interface. Ini memisahkan logic bisnis dari HTTP layer, sekaligus memudahkan proses testing karena service-nya bisa di-mock.
 
-Feature test diterapkan pada seluruh endpoint, mencakup kasus sukses, validasi input, penanganan error dari layanan eksternal, serta skenario kegagalan parsial pada endpoint Final Integration. Total terdapat 15 test dengan 36 assertion, dapat dijalankan melalui `php artisan test`.
+Testing dilakukan lewat feature test yang mencakup kasus sukses, validasi input, error dari layanan eksternal, hingga skenario kegagalan parsial di endpoint Final Integration. Total ada 15 test dengan 36 assertion — bisa dijalankan dengan `php artisan test`.
 
 ## Author
 
